@@ -19,6 +19,7 @@
 package org.apache.lens.client;
 
 import java.net.ConnectException;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -108,14 +109,20 @@ public class LensConnection {
     return client.target(params.getBaseConnectionUrl()).path(params.getMetastoreResourcePath());
   }
 
+  public Client buildClient() {
+    ClientBuilder cb = ClientBuilder.newBuilder().register(MultiPartFeature.class);
+    Iterator<Class<?>> itr = params.getRequestFilters().iterator();
+    while (itr.hasNext()) {
+      cb.register(itr.next());
+    }
+    return cb.build();
+  }
   private WebTarget getSessionWebTarget() {
-    Client client = ClientBuilder.newBuilder().register(MultiPartFeature.class).build();
-    return getSessionWebTarget(client);
+    return getSessionWebTarget(buildClient());
   }
 
   private WebTarget getMetastoreWebTarget() {
-    Client client = ClientBuilder.newBuilder().register(MultiPartFeature.class).build();
-    return getMetastoreWebTarget(client);
+    return getMetastoreWebTarget(buildClient());
   }
 
   /**
@@ -152,6 +159,7 @@ public class LensConnection {
       if (e.getCause() != null && e.getCause() instanceof ConnectException) {
         throw new LensClientServerConnectionException(e.getCause().getMessage(), e);
       }
+      log.error("Bug in open connection code ", e);
     }
 
     log.debug("Successfully switched to database {}", params.getDbName());

@@ -21,7 +21,7 @@
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <name>Lens ML Lib</name>
+  <name>Lens ML API</name>
 
   <parent>
     <artifactId>apache-lens</artifactId>
@@ -36,35 +36,18 @@
   </properties>
 
 
-  <artifactId>lens-ml-lib</artifactId>
+  <artifactId>lens-ml-api</artifactId>
   <packaging>jar</packaging>
-  <description>Lens ML Lib</description>
+  <description>Lens ML API</description>
 
   <dependencies>
 
     <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-csv</artifactId>
-      <version>${org.apache.common.version}</version>
+      <groupId>org.apache.lens</groupId>
+      <artifactId>lens-server-api</artifactId>
+      <version>${project.version}</version>
     </dependency>
 
-    <dependency>
-      <groupId>org.apache.lens</groupId>
-      <artifactId>lens-server-api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.lens</groupId>
-      <artifactId>lens-server-api</artifactId>
-      <type>test-jar</type>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.lens</groupId>
-      <artifactId>lens-ml-api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
     <dependency>
       <groupId>org.apache.lens</groupId>
       <artifactId>lens-api</artifactId>
@@ -78,25 +61,14 @@
     </dependency>
 
     <dependency>
-      <groupId>org.apache.lens</groupId>
-      <artifactId>lens-ml-api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-
-    <!--
-    <dependency>
-      <groupId>org.apache.lens</groupId>
-      <artifactId>lens-spark-client</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    -->
-    <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-common</artifactId>
+        <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.hive</groupId>
       <artifactId>hive-exec</artifactId>
+        <scope>provided</scope>
     </dependency>
 
     <dependency>
@@ -109,27 +81,25 @@
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-core_2.10</artifactId>
       <version>${spark.version}</version>
+        <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-mllib_2.10</artifactId>
       <version>${spark.version}</version>
+        <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-yarn_2.10</artifactId>
       <version>${spark.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-hive_2.10</artifactId>
-      <version>${spark.version}</version>
+        <scope>provided</scope>
     </dependency>
 
     <dependency>
       <groupId>org.apache.hive.hcatalog</groupId>
       <artifactId>hive-hcatalog-core</artifactId>
+        <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>commons-logging</groupId>

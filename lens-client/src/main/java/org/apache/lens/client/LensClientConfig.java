@@ -76,6 +76,10 @@ public class LensClientConfig extends Configuration {
   /** The Constant SESSION_CLUSTER_USER. */
   public static final String SESSION_CLUSTER_USER = "lens.session.cluster.user";
 
+  public static final String SESSION_FILTER_NAMES = CLIENT_PFX + "ws.request.filternames";
+
+  public static final String WS_FILTER_IMPL_SFX = ".ws.filter.impl";
+
   /**
    * Get the username from config
    *
@@ -144,5 +148,9 @@ public class LensClientConfig extends Configuration {
 
   public void setBaseUrl(String baseUrl) {
     this.set(SERVER_BASE_URL, baseUrl);
+  }
+
+  public static String getWSFilterImplConfKey(String filterName) {
+    return CLIENT_PFX + filterName + WS_FILTER_IMPL_SFX;
   }
 }
