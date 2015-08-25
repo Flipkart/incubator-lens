@@ -122,7 +122,7 @@ public class SparkLensContext implements Serializable {
 
   private void resetClientConfig(LensClientConfig lensClientConfig) {
 
-    lensClientConfig.set(LENS_RESULT_OUTPUT_DIR_FORMAT_PARAM, "ROW FORMAT DELIMITED FIELDS TERMINATED BY ','");
+    lensClientConfig.set(LENS_RESULT_OUTPUT_DIR_FORMAT_PARAM, "ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' ESCAPED BY '\\\\'");
     lensClientConfig.set(LENS_PERSIST_RESULTSET_CONFIG_PARAM, CONF.get(LENS_PERSIST_RESULTSET_CONFIG_PARAM,
       LENS_PERSIST_RESULTSET_DEFAULT_CONFIG));
     lensClientConfig.set(LENS_PERSIST_RESULTSET_INDRIVER_CONFIG_PARAM, CONF.get(
