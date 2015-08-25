@@ -26,9 +26,8 @@ import org.apache.lens.client.exceptions.LensAPIException;
 import org.apache.lens.client.exceptions.LensClientException;
 import org.apache.lens.server.api.error.LensException;
 
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
+import org.apache.commons.csv.*;
+import org.apache.commons.el.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -45,6 +44,8 @@ import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+
+import org.relaxng.datatype.Datatype;
 
 
 public class SparkLensContext implements Serializable {
@@ -122,7 +123,8 @@ public class SparkLensContext implements Serializable {
 
   private void resetClientConfig(LensClientConfig lensClientConfig) {
 
-    lensClientConfig.set(LENS_RESULT_OUTPUT_DIR_FORMAT_PARAM, "ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' ESCAPED BY '\\\\'");
+    lensClientConfig.set(LENS_RESULT_OUTPUT_DIR_FORMAT_PARAM, "ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' ESCAPED "
+      + "BY '\\\\'");
     lensClientConfig.set(LENS_PERSIST_RESULTSET_CONFIG_PARAM, CONF.get(LENS_PERSIST_RESULTSET_CONFIG_PARAM,
       LENS_PERSIST_RESULTSET_DEFAULT_CONFIG));
     lensClientConfig.set(LENS_PERSIST_RESULTSET_INDRIVER_CONFIG_PARAM, CONF.get(
@@ -169,56 +171,61 @@ public class SparkLensContext implements Serializable {
   //TO DO: check the mappings
   //TODO handle null values what should be the default.
   private Object typeCastScalaType(DataType type, String value) throws LensException {
-    switch (type.toString()) {
-    case "BooleanType":
-      if (isNull(value)) {
-        return Boolean.parseBoolean("true");
+    try {
+      switch (type.toString()) {
+
+        case "BooleanType":
+          if (isNull(value)) {
+            return Boolean.parseBoolean("true");
+          }
+          return Boolean.parseBoolean(value);
+        case "ShortType":
+          if (isNull(value)) {
+            return Short.parseShort("true");
+          }
+          return Short.parseShort(value);
+        case "IntegerType":
+          if (isNull(value)) {
+            return Integer.parseInt("0");
+          }
+          return Integer.parseInt(value);
+        case "LongType":
+          if (isNull(value)) {
+            return Long.parseLong("0");
+          }
+          return Long.parseLong(value);
+        case "FloatType":
+          if (isNull(value)) {
+            return Float.parseFloat("0.0");
+          }
+          return Float.parseFloat(value);
+        case "DoubleType":
+          if (isNull(value)) {
+            return Double.parseDouble("0.0");
+          }
+          return Double.parseDouble(value);
+        case "StringType":
+          return value;
+        case "TimestampType":
+          if (isNull(value)) {
+            return new Date();
+          }
+          return new Date(value);
+        case "BinaryType":
+          if (isNull(value)) {
+            return Boolean.parseBoolean("true");
+          }
+          return Boolean.parseBoolean(value);
+        case "DateType":
+          if (isNull(value)) {
+            return new Date();
+          }
+          return new Date(value);
+        default:
+          throw new LensException("type not supported" + type.toString());
       }
-      return Boolean.parseBoolean(value);
-    case "ShortType":
-      if (isNull(value)) {
-        return Short.parseShort("true");
-      }
-      return Short.parseShort(value);
-    case "IntegerType":
-      if (isNull(value)) {
-        return Integer.parseInt("0");
-      }
-      return Integer.parseInt(value);
-    case "LongType":
-      if (isNull(value)) {
-        return Long.parseLong("0");
-      }
-      return Long.parseLong(value);
-    case "FloatType":
-      if (isNull(value)) {
-        return Float.parseFloat("0.0");
-      }
-      return Float.parseFloat(value);
-    case "DoubleType":
-      if (isNull(value)) {
-        return Double.parseDouble("0.0");
-      }
-      return Double.parseDouble(value);
-    case "StringType":
-      return value;
-    case "TimestampType":
-      if (isNull(value)) {
-        return new Date();
-      }
-      return new Date(value);
-    case "BinaryType":
-      if (isNull(value)) {
-        return Boolean.parseBoolean("true");
-      }
-      return Boolean.parseBoolean(value);
-    case "DateType":
-      if (isNull(value)) {
-        return new Date();
-      }
-      return new Date(value);
-    default:
-      throw new LensException("type not supported" + type.toString());
+    } catch(Exception e){
+      throw new LensException("Error while type casting. Type: " + type.toString() + ", Value: "+value, e);
     }
   }
 
@@ -280,7 +287,7 @@ public class SparkLensContext implements Serializable {
     for (ResultColumn resultColumn : resultSetWithStats.getResultSet().getResultSetMetadata().getColumns()) {
       String columnName;
       if (resultColumn.getName().contains(".")) {
-        columnName = resultColumn.getName().replace('.', ':').split(":")[1];
+        columnName = resultColumn.getName().split("\\.")[1];
       } else {
         columnName = resultColumn.getName();
       }
@@ -292,7 +299,15 @@ public class SparkLensContext implements Serializable {
     JavaRDD<Row> rowRDD = javaRDD.map(
       new Function<String, Row>() {
         public Row call(String record) throws Exception {
-          List<CSVRecord> records = CSVParser.parse(record, CSVFormat.DEFAULT).getRecords();
+
+          //System.out.println("FLIP: "+record);
+          CSVFormat c = CSVFormat.DEFAULT;
+          List<CSVRecord> records;
+          try {
+            records = CSVParser.parse(record, c.withEscape('\\').withQuote((Character)null)).getRecords();
+          } catch(Exception e) {
+            throw new LensException("Error while parsing record: " + record, e);
+          }
           //Collection coll = records.get(0).toMap().values();
           //return RowFactory.create(coll.toArray(new Object[coll.size()]));
           // TODO: Handle NON CSV file also
@@ -301,7 +316,13 @@ public class SparkLensContext implements Serializable {
           Iterator<String> iterator = records.get(0).iterator();
           Iterator<StructField> schemaIterator = scheamList.iterator();
           while (iterator.hasNext()) {
-            objects[i++] = typeCastScalaType(schemaIterator.next().dataType(), iterator.next());
+            String objectString = iterator.next();
+            org.apache.spark.sql.types.DataType datatype = schemaIterator.next().dataType();
+            try {
+              objects[i++] = typeCastScalaType(datatype, objectString);
+            } catch(Exception e){
+              throw new LensException("Error while typecasting object: "+objectString +"dataType: "+datatype, e);
+            }
           }
           return RowFactory.create(objects);
         }
@@ -345,16 +366,18 @@ public class SparkLensContext implements Serializable {
     //TODO checking of hive table's already existence.
 
     //TODO  check table's and path location don't already exist
-    String tableName = this.namespace + "." + lensClientConfig.getUser() + "_" + table;
+    String tableName = this.namespace + "." + lensClientConfig.getUser().replace('.', '_') + "_" + table;
     String dataLocation = this.dataFramePersistenseDirectoryPath + tableName + UUID.randomUUID();
     try {
+      //TODO: Check if the already existing file can be re-used. maybe if we can check df's parent is created from
+      // TODO: queryresults?
       df.write().format("com.databricks.spark.csv").save(dataLocation);
     } catch (Exception e) {
       throw new LensException("Error while persisting DataFrame.", e);
     }
 
     LOG.info("Persisted DataFrame to " + dataLocation);
-
+    System.out.println("Persisted DataFrame to " + dataLocation);
     StringBuffer sb = new StringBuffer();
     sb.append("CREATE EXTERNAL TABLE ");
     sb.append("`");
@@ -382,12 +405,13 @@ public class SparkLensContext implements Serializable {
       firstPair = false;
     }
     sb.append(") ");
-    sb.append("ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' LOCATION '");
+    sb.append("ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' ESCAPED BY '\\\\' LOCATION '");
     sb.append(dataLocation);
     sb.append("'");
 
     String query = sb.toString();
     LOG.info("Table registration query: " + query);
+    System.out.println("Table registration query: " + query);
 
     try {
       LensClient.LensClientResultSetWithStats resultSetWithStats = getLensClient().getResults(query,
@@ -395,7 +419,8 @@ public class SparkLensContext implements Serializable {
     } catch (LensAPIException ex) {
       throw new LensException("Error while registering table to lens", ex);
     }
-    LOG.info("Finished saving DataFrame.");
+    LOG.info("Finished saving DataFrame." + tableName);
+    System.out.println("Finished saving DataFrame." + tableName);
 //    tbl = new Table();
 //    for (int i = 0; i < df.schema().fields().length ; i++ ) {
 //      tbl.getCols().add(new FieldSchema(df.schema().fields()[i].name(),
