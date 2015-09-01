@@ -40,10 +40,17 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.spark.SparkContext;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.DataFrame;
 import org.apache.spark.sql.SQLContext;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 
 import lombok.Getter;
+import scala.collection.Seq;
+import scala.collection.mutable.Buffer;
 
 public class LensContext {
 
@@ -56,7 +63,7 @@ public class LensContext {
   private static final String LENS_ADD_JARS_PARAM = "lens.spark.add.jars";
   private static ClassLoader sLoader = null;
   private static Pattern ignoreJarFilePattern = Pattern.compile("^lens-.*|^org.apache.lens_lens.*");
-  private static Pattern includeJarFilePattern = Pattern.compile(".*lens-ml-lib.*|.*lens-client.*");
+  private static Pattern includeJarFilePattern = Pattern.compile(".*lens-ml-lib.*|.*lens-client.*|.*lens-cli.*");
   @Getter
   private Object lensContext = null;
 
@@ -205,17 +212,83 @@ public class LensContext {
   }
 
   //TODO it should take only table name string instead of dataset. Since we are restricting output database.
-  public void createHiveTable(DataFrame df, String table) throws HiveException {
+  public String createHiveTable(DataFrame df, String table) throws Exception {
 
     try {
       Thread.currentThread().setContextClassLoader(sLoader);
       Class<?> claszz =
         Thread.currentThread().getContextClassLoader().loadClass("org.apache.lens.client.SparkLensContext");
       Method m = claszz.getDeclaredMethod("createHiveTable", DataFrame.class, String.class);
-      m.invoke(lensContext, df, table);
+      return (String)m.invoke(lensContext, df, table);
     } catch (Exception e) {
       LOG.error(e.getMessage());
+      throw e;
     }
+  }
 
+  public DataFrame getDataBases() throws Exception{
+    try {
+      Thread.currentThread().setContextClassLoader(sLoader);
+      Class<?> claszz =
+        Thread.currentThread().getContextClassLoader().loadClass("org.apache.lens.client.SparkLensContext");
+      Method m = claszz.getDeclaredMethod("showDataBases");
+      return (DataFrame)m.invoke(lensContext);
+    } catch (Exception e) {
+      LOG.error(e.getMessage());
+      throw e;
+    }
+  }
+
+  public String getCurrentDataBase() throws Exception{
+    try {
+      Thread.currentThread().setContextClassLoader(sLoader);
+      Class<?> claszz =
+        Thread.currentThread().getContextClassLoader().loadClass("org.apache.lens.client.SparkLensContext");
+      Method m = claszz.getDeclaredMethod("showCurrentDataBase");
+      return (String)m.invoke(lensContext);
+    } catch (Exception e) {
+      LOG.error(e.getMessage());
+      throw e;
+    }
+  }
+
+  public boolean setCurrentDataBase(String dbName) throws Exception{
+    try {
+      Thread.currentThread().setContextClassLoader(sLoader);
+      Class<?> claszz =
+        Thread.currentThread().getContextClassLoader().loadClass("org.apache.lens.client.SparkLensContext");
+      Method m = claszz.getDeclaredMethod("setCurrentDataBase", String.class);
+      return (boolean)m.invoke(lensContext, dbName);
+    } catch (Exception e) {
+      LOG.error(e.getMessage());
+      throw e;
+    }
+  }
+
+  public DataFrame getNativeTables() throws Exception{
+    try {
+      Thread.currentThread().setContextClassLoader(sLoader);
+      Class<?> claszz =
+        Thread.currentThread().getContextClassLoader().loadClass("org.apache.lens.client.SparkLensContext");
+      Method m = claszz.getDeclaredMethod("showNativeTables");
+      return (DataFrame)m.invoke(lensContext);
+
+    } catch (Exception e) {
+      LOG.error(e.getMessage());
+      throw e;
+    }
+  }
+
+  public String cmd(String command) throws Exception {
+    try {
+      Thread.currentThread().setContextClassLoader(sLoader);
+      Class<?> claszz =
+        Thread.currentThread().getContextClassLoader().loadClass("org.apache.lens.client.SparkLensContext");
+      Method m = claszz.getDeclaredMethod("cmd", String.class);
+      return (String)m.invoke(lensContext, command);
+    } catch (Exception e) {
+      LOG.error(e.getMessage());
+      throw e;
+    }
   }
 }

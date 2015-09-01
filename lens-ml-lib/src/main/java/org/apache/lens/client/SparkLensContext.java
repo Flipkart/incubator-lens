@@ -19,6 +19,8 @@
 package org.apache.lens.client;
 
 import java.io.Serializable;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 
 import org.apache.lens.api.query.*;
@@ -27,7 +29,6 @@ import org.apache.lens.client.exceptions.LensClientException;
 import org.apache.lens.server.api.error.LensException;
 
 import org.apache.commons.csv.*;
-import org.apache.commons.el.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -47,7 +48,7 @@ import org.apache.spark.sql.types.StructType;
 
 import org.relaxng.datatype.Datatype;
 
-
+//TODO: refactor code so as not to use zeppeline as dependency.
 public class SparkLensContext implements Serializable {
 
   private static final long serialVersionUID = 1L;
@@ -168,66 +169,39 @@ public class SparkLensContext implements Serializable {
     return value.matches("\\\\N");
   }
 
-  //TO DO: check the mappings
+  //TODO: check the mappings
   //TODO handle null values what should be the default.
-  private Object typeCastScalaType(DataType type, String value) throws LensException {
-    try {
-      switch (type.toString()) {
 
+  private Object typeCastScalaType(DataType type, String value) throws java.text.ParseException, LensException {
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+      switch (type.toString()) {
         case "BooleanType":
-          if (isNull(value)) {
-            return Boolean.parseBoolean("true");
-          }
           return Boolean.parseBoolean(value);
         case "ShortType":
-          if (isNull(value)) {
-            return Short.parseShort("true");
-          }
           return Short.parseShort(value);
         case "IntegerType":
-          if (isNull(value)) {
-            return Integer.parseInt("0");
-          }
           return Integer.parseInt(value);
         case "LongType":
-          if (isNull(value)) {
-            return Long.parseLong("0");
-          }
           return Long.parseLong(value);
         case "FloatType":
-          if (isNull(value)) {
-            return Float.parseFloat("0.0");
-          }
           return Float.parseFloat(value);
         case "DoubleType":
-          if (isNull(value)) {
-            return Double.parseDouble("0.0");
-          }
           return Double.parseDouble(value);
         case "StringType":
           return value;
         case "TimestampType":
-          if (isNull(value)) {
-            return new Date();
-          }
-          return new Date(value);
+          return sdf.parse(value);
         case "BinaryType":
-          if (isNull(value)) {
-            return Boolean.parseBoolean("true");
-          }
-          return Boolean.parseBoolean(value);
+          // Properly handle binary type
+          return value;
         case "DateType":
-          if (isNull(value)) {
-            return new Date();
-          }
-          return new Date(value);
+          return sdf.parse(value);
         default:
           throw new LensException("type not supported" + type.toString());
       }
-    } catch(Exception e){
-      throw new LensException("Error while type casting. Type: " + type.toString() + ", Value: "+value, e);
-    }
   }
+
+
 
   private DataType getScalaDataType(ResultColumnType resultColumnType) throws LensException {
     switch (resultColumnType) {
@@ -277,12 +251,12 @@ public class SparkLensContext implements Serializable {
     return buildDataFrame(resultSetWithStats);
   }
 
+
+
   private DataFrame buildDataFrame(LensClient.LensClientResultSetWithStats resultSetWithStats) throws LensException {
+    QueryResult queryResult = resultSetWithStats.getResultSet().getResult();
 
-    String uri = ((PersistentQueryResult) resultSetWithStats.getResultSet().getResult()).getPersistedURI();
 
-    JavaRDD<String> javaRDD = javaSparkContext.textFile(uri);
-    LOG.info("RDD pointing to : " + uri);
     List<StructField> fields = new ArrayList<StructField>();
     for (ResultColumn resultColumn : resultSetWithStats.getResultSet().getResultSetMetadata().getColumns()) {
       String columnName;
@@ -294,13 +268,51 @@ public class SparkLensContext implements Serializable {
       fields.add(DataTypes.createStructField(columnName,
         getScalaDataType((resultColumn.getType())), true));
     }
-    final List<StructField> scheamList = new ArrayList(fields);
+    final List<StructField> schemaList = new ArrayList(fields);
     StructType schema = DataTypes.createStructType(fields);
+
+    JavaRDD<Row> rowRDD = null;
+    if(queryResult instanceof InMemoryQueryResult) {
+      rowRDD = createRDDFromInMemoryResult((InMemoryQueryResult)queryResult);
+    } else if (queryResult instanceof PersistentQueryResult){
+      rowRDD = createRDDFromPersistedResult((PersistentQueryResult)queryResult, schemaList);
+    } else {
+      throw new LensException("Unsupported ResultSet Type");
+    }
+
+    return sqlContext.createDataFrame(rowRDD, schema);
+  }
+
+  private JavaRDD<Row> createRDDFromInMemoryResult(InMemoryQueryResult inMemoryQueryResult){
+    List<ResultRow> resultRows = inMemoryQueryResult.getRows();
+    List<List<Object>> objectList = new ArrayList();
+    for(ResultRow row : resultRows){
+      objectList.add(row.getValues());
+    }
+    JavaRDD<List<Object>> resultRowRDD = javaSparkContext.parallelize(objectList);
+    JavaRDD<Row> rowRDD = resultRowRDD.map(new Function<List<Object>, Row>() {
+      @Override
+      public Row call(List<Object> list) throws Exception {
+        Object[] objects = new Object[list.size()];
+        int iterator=0;
+        for(Object obj : list){
+          objects[iterator++] = obj;
+        }
+        return RowFactory.create(objects);
+      }
+    });
+    return rowRDD;
+  }
+
+  private JavaRDD<Row> createRDDFromPersistedResult(PersistentQueryResult persistentQueryResult, final
+  List<StructField> scheamList){
+    String uri = persistentQueryResult.getPersistedURI();
+    LOG.info("RDD pointing to : " + uri);
+    JavaRDD<String> javaRDD = javaSparkContext.textFile(uri);
+
     JavaRDD<Row> rowRDD = javaRDD.map(
       new Function<String, Row>() {
         public Row call(String record) throws Exception {
-
-          //System.out.println("FLIP: "+record);
           CSVFormat c = CSVFormat.DEFAULT;
           List<CSVRecord> records;
           try {
@@ -308,8 +320,7 @@ public class SparkLensContext implements Serializable {
           } catch(Exception e) {
             throw new LensException("Error while parsing record: " + record, e);
           }
-          //Collection coll = records.get(0).toMap().values();
-          //return RowFactory.create(coll.toArray(new Object[coll.size()]));
+
           // TODO: Handle NON CSV file also
           Object[] objects = new Object[records.get(0).size()];
           int i = 0;
@@ -318,20 +329,22 @@ public class SparkLensContext implements Serializable {
           while (iterator.hasNext()) {
             String objectString = iterator.next();
             org.apache.spark.sql.types.DataType datatype = schemaIterator.next().dataType();
-            try {
-              objects[i++] = typeCastScalaType(datatype, objectString);
-            } catch(Exception e){
-              throw new LensException("Error while typecasting object: "+objectString +"dataType: "+datatype, e);
+            if (isNull(objectString)) {
+              objects[i++] = null;
+            } else {
+              try {
+                objects[i++] = typeCastScalaType(datatype, objectString);
+              } catch(ParseException e){
+                throw new LensException("Error while formatting date: " + objectString + "dataType: " + datatype, e);
+              } catch(LensException e) {
+                throw new LensException("Error while typecasting: " + objectString + "dataType: " + datatype, e);
+              }
             }
           }
           return RowFactory.create(objects);
         }
       });
-    DataFrame df = sqlContext.createDataFrame(rowRDD, schema);
-
-    // TODO: delete the persisted file;
-
-    return df;
+    return rowRDD;
   }
 
   public QueryHandle createDataFrameAsync(String cubeQL) throws LensAPIException {
@@ -339,26 +352,70 @@ public class SparkLensContext implements Serializable {
   }
 
   public QueryHandle createDataFrameAsync(String cubeQL, String queryName) throws LensAPIException {
-    return lensClient.executeQueryAsynch(cubeQL, queryName).getData();
+    return getLensClient().executeQueryAsynch(cubeQL, queryName).getData();
+  }
+
+  public DataFrame showDataBases(){
+    List<String> nativeTables = getLensClient().getAllDatabases();;
+    JavaRDD<String> distData = javaSparkContext.parallelize(nativeTables);
+    List<StructField> fields = new ArrayList<StructField>();
+    fields.add((DataTypes.createStructField("Name", DataTypes.StringType, true)));
+    final List<StructField> schemaList = new ArrayList(fields);
+    StructType schema = DataTypes.createStructType(fields);
+
+    JavaRDD<Row> rowRDD = distData.map(new Function<String, Row>() {
+      @Override
+      public Row call(String s) throws Exception {
+        return RowFactory.create(s);
+      }
+    });
+
+    return sqlContext.createDataFrame(rowRDD, schema);
+  }
+
+  public String showCurrentDataBase(){
+    return getLensClient().getCurrentDatabae();
+  }
+
+  public boolean setCurrentDataBase(String dbName){
+    return getLensClient().setDatabase(dbName);
+  }
+
+  public DataFrame showNativeTables(){
+    List<String> nativeTables = getLensClient().getAllNativeTables();
+    JavaRDD<String> distData = javaSparkContext.parallelize(nativeTables);
+    List<StructField> fields = new ArrayList<StructField>();
+    fields.add((DataTypes.createStructField("Name", DataTypes.StringType, true)));
+    final List<StructField> schemaList = new ArrayList(fields);
+    StructType schema = DataTypes.createStructType(fields);
+
+    JavaRDD<Row> rowRDD = distData.map(new Function<String, Row>() {
+      @Override
+      public Row call(String s) throws Exception {
+        return RowFactory.create(s);
+      }
+    });
+
+      return sqlContext.createDataFrame(rowRDD, schema);
   }
 
   public void killQuery(QueryHandle queryHandle) throws LensAPIException {
-    lensClient.killQuery(queryHandle);
+    getLensClient().killQuery(queryHandle);
   }
 
   public QueryStatus queryStatus(QueryHandle queryHandle) throws LensException {
-    return lensClient.getQueryStatus(queryHandle);
+    return getLensClient().getQueryStatus(queryHandle);
   }
 
   public DataFrame getDataFrame(QueryHandle queryHandle) throws LensException {
     if (!queryStatus(queryHandle).finished()) {
       throw new RuntimeException("query not yet finished " + queryHandle);
     }
-    return (buildDataFrame(lensClient.getAsyncResults(queryHandle)));
+    return (buildDataFrame(getLensClient().getAsyncResults(queryHandle)));
 
   }
 
-  public void createHiveTable(DataFrame df, String table) throws LensException, HiveException {
+  public String createHiveTable(DataFrame df, String table) throws LensException, HiveException {
     if (df == null || table == null) {
       throw new LensException("input can't be null");
     }
@@ -416,11 +473,15 @@ public class SparkLensContext implements Serializable {
     try {
       LensClient.LensClientResultSetWithStats resultSetWithStats = getLensClient().getResults(query,
         LENS_ML_TABLE_REGISTER_QUERY_NAME_PREFIX);
+      if(resultSetWithStats.getQuery().getStatus().getStatus() != QueryStatus.Status.SUCCESSFUL){
+        throw new LensException("Error while registering table to lens, Message: "+resultSetWithStats.getQuery().getErrorMessage());
+      }
     } catch (LensAPIException ex) {
       throw new LensException("Error while registering table to lens", ex);
     }
     LOG.info("Finished saving DataFrame." + tableName);
     System.out.println("Finished saving DataFrame." + tableName);
+    return tableName;
 //    tbl = new Table();
 //    for (int i = 0; i < df.schema().fields().length ; i++ ) {
 //      tbl.getCols().add(new FieldSchema(df.schema().fields()[i].name(),
@@ -446,7 +507,7 @@ public class SparkLensContext implements Serializable {
   //TODO: Test on production spark cluster
   //TODO : SQL COntext will be able to query-- or user only needs to use LEnsCOntext?
   //TODO : Error needs to be propogated back to the user
-  //TODO : Ability to connect and reconnect the session. Shouldn't be tied to the constructor
+
   //TODO: ability to set the user, else, always raise an exception
   //TODO: Create a relevant key name and app name for QAAS intg
   // TODO: create a package to be able to install on any server
